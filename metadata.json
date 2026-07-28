@@ -1,0 +1,6 @@
+{
+  "name": "6-Max Preflop RFI Trainer",
+  "description": "6-Max NLH 100bb Preflop Raise First In (RFI) GTO Strategy Trainer with 1326 combo weighting, mistake queue spaced repetition, and EV penalty grading.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
