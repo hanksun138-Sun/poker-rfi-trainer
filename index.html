@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6-Max Preflop RFI Trainer - GTO 翻前首开加注训练器</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone CDN for inline JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    /* Custom Scrollbar & Fonts */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    body {
+      background-color: #0B132B;
+      color: #F8FAFC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // --- DATA & TYPES ---
+    const POSITIONS = ['UTG', 'MP', 'CO', 'BTN', 'SB'];
+    const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+    const SUITS = ['s', 'h', 'd', 'c'];
+    
+    const SUIT_SYMBOLS = { s: '♠', h: '♥', d: '♦', c: '♣' };
+    
+    const RFI_STRATEGY = {
+      "UTG": {
+        "raise": ["77","88","99","A3s","A4s","A5s","A6s","A7s","A8s","A9s","AA","AJo","AJs","AKo","AKs","AQo","AQs","ATo","ATs","JJ","JTs","K9s","KJo","KJs","KK","KQo","KQs","KTs","Q9s","QJs","QQ","QTs","T9s","TT"],
+        "mixed": {"K8s":{"raise":0.5,"fold":0.5},"K5s":{"raise":0.5,"fold":0.5},"QJo":{"raise":0.5,"fold":0.5},"J9s":{"raise":0.5,"fold":0.5},"KTo":{"raise":0.5,"fold":0.5},"66":{"raise":0.5,"fold":0.5}},
+        "fold": ["22","32o","32s","33","42o","42s","43o","43s","44","52o","52s","53o","53s","54o","54s","55","62o","62s","63o","63s","64o","64s","65o","65s","72o","72s","73o","73s","74o","74s","75o","75s","76o","76s","82o","82s","83o","83s","84o","84s","85o","85s","86o","86s","87o","87s","92o","92s","93o","93s","94o","94s","95o","95s","96o","96s","97o","97s","98o","98s","A2o","A2s","A3o","A4o","A5o","A6o","A7o","A8o","A9o","J2o","J2s","J3o","J3s","J4o","J4s","J5o","J5s","J6o","J6s","J7o","J7s","J8o","J8s","J9o","JTo","K2o","K2s","K3o","K3s","K4o","K4s","K5o","K6o","K6s","K7o","K7s","K8o","K9o","Q2o","Q2s","Q3o","Q3s","Q4o","Q4s","Q5o","Q5s","Q6o","Q6s","Q7o","Q7s","Q8o","Q8s","Q9o","QTo","T2o","T2s","T3o","T3s","T4o","T4s","T5o","T5s","T6o","T6s","T7o","T7s","T8o","T8s","T9o"]
+      },
+      "MP": {
+        "raise": ["66","77","88","99","A2s","A3s","A4s","A5s","A6s","A7s","A8s","A9s","AA","AJo","AJs","AKo","AKs","AQo","AQs","ATo","ATs","J9s","JJ","JTs","K6s","K7s","K8s","K9s","KJo","KJs","KK","KQo","KQs","KTo","KTs","Q9s","QJo","QJs","QQ","QTs","T9s","TT"],
+        "mixed": {"55":{"raise":0.5,"fold":0.5},"K5s":{"raise":0.5,"fold":0.5},"Q8s":{"raise":0.5,"fold":0.5},"QTo":{"raise":0.5,"fold":0.5},"JTo":{"raise":0.5,"fold":0.5},"T8s":{"raise":0.5,"fold":0.5},"A9o":{"raise":0.5,"fold":0.5},"98s":{"raise":0.5,"fold":0.5},"87s":{"raise":0.5,"fold":0.5},"76s":{"raise":0.5,"fold":0.5},"65s":{"raise":0.5,"fold":0.5},"54s":{"raise":0.5,"fold":0.5}},
+        "fold": ["22","32o","32s","33","42o","42s","43o","43s","44","52o","52s","53o","53s","54o","62o","62s","63o","63s","64o","64s","65o","72o","72s","73o","73s","74o","74s","75o","75s","76o","82o","82s","83o","83s","84o","84s","85o","85s","86o","86s","87o","92o","92s","93o","93s","94o","94s","95o","95s","96o","96s","97o","97s","98o","A2o","A3o","A4o","A5o","A6o","A7o","A8o","J2o","J2s","J3o","J3s","J4o","J4s","J5o","J5s","J6o","J6s","J7o","J7s","J8o","J8s","J9o","K2o","K2s","K3o","K3s","K4o","K4s","K5o","K6o","K7o","K8o","K9o","Q2o","Q2s","Q3o","Q3s","Q4o","Q4s","Q5o","Q5s","Q6o","Q6s","Q7o","Q7s","Q8o","Q9o","T2o","T2s","T3o","T3s","T4o","T4s","T5o","T5s","T6o","T6s","T7o","T7s","T8o","T9o"]
+      },
+      "CO": {
+        "raise": ["33","44","54s","55","65s","66","76s","77","87s","88","97s","98s","99","A2s","A3s","A4s","A5o","A5s","A6s","A7s","A8s","A9o","A9s","AA","AJo","AJs","AKo","AKs","AQo","AQs","ATo","ATs","J8s","J9s","JJ","JTo","JTs","K4s","K5s","K6s","K7s","K8s","K9s","KJo","KJs","KK","KQo","KQs","KTo","KTs","Q6s","Q7s","Q8s","Q9s","QJo","QJs","QQ","QTo","QTs","T8s","T9s","TT"],
+        "mixed": {"K3s":{"raise":0.5,"fold":0.5},"J7s":{"raise":0.5,"fold":0.5},"T7s":{"raise":0.5,"fold":0.5},"A8o":{"raise":0.5,"fold":0.5},"22":{"raise":0.5,"fold":0.5}},
+        "fold": ["32o","32s","42o","42s","43o","43s","52o","52s","53o","53s","54o","62o","62s","63o","63s","64o","64s","65o","72o","72s","73o","73s","74o","74s","75o","75s","76o","82o","82s","83o","83s","84o","84s","85o","85s","86o","86s","87o","92o","92s","93o","93s","94o","94s","95o","95s","96o","96s","97o","98o","A2o","A3o","A4o","A6o","A7o","J2o","J2s","J3o","J3s","J4o","J4s","J5o","J5s","J6o","J6s","J7o","J8o","J9o","K2o","K2s","K3o","K4o","K5o","K6o","K7o","K8o","K9o","Q2o","Q2s","Q3o","Q3s","Q4o","Q4s","Q5o","Q5s","Q6o","Q7o","Q8o","Q9o","T2o","T2s","T3o","T3s","T4o","T4s","T5o","T5s","T6o","T6s","T7o","T8o","T9o"]
+      },
+      "BTN": {
+        "raise": ["22","33","44","54s","55","65s","66","75s","76s","77","86s","87s","88","96s","97s","98s","99","A2s","A3s","A4o","A4s","A5o","A5s","A6o","A6s","A7o","A7s","A8o","A8s","A9o","A9s","AA","AJo","AJs","AKo","AKs","AQo","AQs","ATo","ATs","J5s","J6s","J7s","J8s","J9o","J9s","JJ","JTo","JTs","K2s","K3s","K4s","K5s","K6s","K7s","K8s","K9o","K9s","KJo","KJs","KK","KQo","KQs","KTo","KTs","Q3s","Q4s","Q5s","Q6s","Q7s","Q8s","Q9o","Q9s","QJo","QJs","QQ","QTo","QTs","T6s","T7s","T8s","T9o","T9s","TT"],
+        "mixed": {"J4s":{"raise":0.5,"fold":0.5},"K8o":{"raise":0.5,"fold":0.5},"J8o":{"raise":0.5,"fold":0.5},"T8o":{"raise":0.5,"fold":0.5},"98o":{"raise":0.5,"fold":0.5}},
+        "fold": ["32o","32s","42o","42s","43o","43s","52o","52s","53o","53s","54o","62o","62s","63o","63s","64o","64s","65o","72o","72s","73o","73s","74o","74s","75o","76o","82o","82s","83o","83s","84o","84s","85o","85s","86o","87o","92o","92s","93o","93s","94o","94s","95o","95s","96o","97o","A2o","A3o","J2o","J2s","J3o","J3s","J4o","J5o","J6o","J7o","K2o","K3o","K4o","K5o","K6o","K7o","Q2o","Q2s","Q3o","Q4o","Q5o","Q6o","Q7o","Q8o","T2o","T2s","T3o","T3s","T4o","T4s","T5o","T5s","T6o","T7o"]
+      },
+      "SB": {
+        "raise": ["22","33","44","54s","55","64s","65s","66","75s","76s","77","85s","86s","87s","88","96s","97s","98s","99","A2o","A2s","A3o","A3s","A4o","A4s","A5o","A5s","A6o","A6s","A7o","A7s","A8o","A8s","A9o","A9s","AA","AJo","AJs","AKo","AKs","AQo","AQs","ATo","ATs","J4s","J5s","J6s","J7s","J8o","J8s","J9o","J9s","JJ","JTo","JTs","K2s","K3s","K4s","K5s","K6s","K7s","K8o","K8s","K9o","K9s","KJo","KJs","KK","KQo","KQs","KTo","KTs","Q2s","Q3s","Q4s","Q5s","Q6s","Q7s","Q8o","Q8s","Q9o","Q9s","QJo","QJs","QQ","QTo","QTs","T6s","T7s","T8o","T8s","T9o","T9s","TT"],
+        "mixed": {"K7o":{"raise":0.5,"fold":0.5},"Q7o":{"raise":0.5,"fold":0.5},"J7o":{"raise":0.5,"fold":0.5},"97o":{"raise":0.5,"fold":0.5},"87o":{"raise":0.5,"fold":0.5},"53s":{"raise":0.5,"fold":0.5},"43s":{"raise":0.5,"fold":0.5}},
+        "fold": ["32o","32s","42o","42s","43o","52o","52s","53o","54o","62o","62s","63o","63s","64o","65o","72o","72s","73o","73s","74o","74s","75o","76o","82o","82s","83o","83s","84o","84s","85o","86o","92o","92s","93o","93s","94o","94s","95o","95s","96o","98o","J2o","J2s","J3o","J3s","J4o","J5o","J6o","K2o","K3o","K4o","K5o","K6o","Q2o","Q3o","Q4o","Q5o","Q6o","T2o","T2s","T3o","T3s","T4o","T4s","T5o","T5s","T6o","T7o"]
+      }
+    };
+
+    function getHandString(c1, c2) {
+      const r1Idx = RANKS.indexOf(c1.rank);
+      const r2Idx = RANKS.indexOf(c2.rank);
+      let highCard = r1Idx <= r2Idx ? c1 : c2;
+      let lowCard = r1Idx <= r2Idx ? c2 : c1;
+
+      if (highCard.rank === lowCard.rank) return `${highCard.rank}${lowCard.rank}`;
+      const suited = highCard.suit === lowCard.suit ? 's' : 'o';
+      return `${highCard.rank}${lowCard.rank}${suited}`;
+    }
+
+    function getAll1326Combos() {
+      const deck = [];
+      for (const r of RANKS) {
+        for (const s of SUITS) {
+          deck.push({ rank: r, suit: s });
+        }
+      }
+      const combos = [];
+      for (let i = 0; i < deck.length; i++) {
+        for (let j = i + 1; j < deck.length; j++) {
+          combos.push({
+            card1: deck[i],
+            card2: deck[j],
+            handStr: getHandString(deck[i], deck[j])
+          });
+        }
+      }
+      return combos;
+    }
+
+    const ALL_1326_COMBOS = getAll1326Combos();
+
+    function getHandActionType(position, handStr) {
+      const posData = RFI_STRATEGY[position];
+      if (posData.raise.includes(handStr)) return 'raise';
+      if (posData.mixed[handStr]) return 'mixed';
+      return 'fold';
+    }
+
+    const PREMIER_RAISE_HANDS = ['AA', 'KK', 'QQ', 'JJ', 'AKs', 'AKo', 'AQs', 'AQo'];
+    const TOTAL_TRASH_FOLDS = [
+      '72o', '32o', '42o', '52o', '62o', '82o', '92o', 'T2o', 'J2o', 'Q2o', 'K2o',
+      '73o', '83o', '93o', 'T3o', 'J3o', 'Q3o', 'K3o', '74o', '84o', '94o', 'T4o',
+      '43o', '53o', '63o', '54o', '64o', '75o', '85o'
+    ];
+
+    function evaluateDecision(position, handStr, userAction) {
+      const actionType = getHandActionType(position, handStr);
+
+      if (actionType === 'mixed') {
+        return {
+          isCorrect: true,
+          isMixed: true,
+          evPenalty: 0,
+          message: '此手牌属于 50/50 混合策略区（加注/弃牌均可，0 EV 损失）',
+          recommendedAction: 'mixed',
+          penaltyLevel: 'none'
+        };
+      }
+
+      if (actionType === userAction) {
+        return {
+          isCorrect: true,
+          isMixed: false,
+          evPenalty: 0,
+          message: actionType === 'raise' ? '正确！该手牌在 GTO 中为 100% 加注' : '正确！该手牌在 GTO 中为 100% 弃牌',
+          recommendedAction: actionType,
+          penaltyLevel: 'none'
+        };
+      }
+
+      if (actionType === 'raise' && userAction === 'fold') {
+        if (PREMIER_RAISE_HANDS.includes(handStr)) {
+          return {
+            isCorrect: false,
+            isMixed: false,
+            evPenalty: -120,
+            message: `重大爆破级失误！弃掉强牌 ${handStr} 造成极高 EV 亏损`,
+            recommendedAction: 'raise',
+            penaltyLevel: 'blunder'
+          };
+        }
+        const isMediumHand = ['TT', '99', '88', 'AJs', 'ATs', 'KQs', 'KJs', 'QJs', 'JTs'].includes(handStr);
+        if (isMediumHand) {
+          return {
+            isCorrect: false,
+            isMixed: false,
+            evPenalty: -60,
+            message: `中等失误：${handStr} 在 ${position} 应坚决加注`,
+            recommendedAction: 'raise',
+            penaltyLevel: 'medium'
+          };
+        }
+        return {
+          isCorrect: false,
+          isMixed: false,
+          evPenalty: -40,
+          message: `边际轻微失误：${handStr} 处于 ${position} 加注边缘`,
+          recommendedAction: 'raise',
+          penaltyLevel: 'minor'
+        };
+      }
+
+      if (actionType === 'fold' && userAction === 'raise') {
+        if (TOTAL_TRASH_FOLDS.includes(handStr)) {
+          return {
+            isCorrect: false,
+            isMixed: false,
+            evPenalty: -120,
+            message: `重大爆破级失误！加注极弱牌 ${handStr} 属于无意义送钱`,
+            recommendedAction: 'fold',
+            penaltyLevel: 'blunder'
+          };
+        }
+        const isCloseFold = [
+          '55', '22', '33', '44', 'A8o', 'A9o', 'K3s', 'K5s', 'Q8s', 'J7s', 'T7s', 'J9s', 'QTo', 'JTo', 'K8s'
+        ].includes(handStr);
+
+        if (isCloseFold) {
+          return {
+            isCorrect: false,
+            isMixed: false,
+            evPenalty: -40,
+            message: `边际轻微失误：${handStr} 在 ${position} 略微偏向弃牌`,
+            recommendedAction: 'fold',
+            penaltyLevel: 'minor'
+          };
+        }
+
+        return {
+          isCorrect: false,
+          isMixed: false,
+          evPenalty: -60,
+          message: `中等失误：${handStr} 在 ${position} 不符合首开加注要求`,
+          recommendedAction: 'fold',
+          penaltyLevel: 'medium'
+        };
+      }
+
+      return {
+        isCorrect: false,
+        isMixed: false,
+        evPenalty: -40,
+        message: '决策错误',
+        recommendedAction: actionType,
+        penaltyLevel: 'minor'
+      };
+    }
+
+    function classifyCombosForPosition(pos, combos = ALL_1326_COMBOS) {
+      const posIndex = POSITIONS.indexOf(pos);
+      const prevPos = posIndex > 0 ? POSITIONS[posIndex - 1] : pos;
+      const nextPos = posIndex < POSITIONS.length - 1 ? POSITIONS[posIndex + 1] : pos;
+
+      const cat1 = []; // 高频: 边缘牌与混合策略牌 / 临界开牌 (60%)
+      const cat2 = []; // 中频: 位置临界牌 (30%)
+      const cat3 = []; // 低频: 强牌与极弱牌 (10%)
+
+      combos.forEach((combo) => {
+        const handStr = combo.handStr;
+
+        let raiseCount = 0;
+        let foldCount = 0;
+        POSITIONS.forEach((p) => {
+          const act = getHandActionType(p, handStr);
+          if (act === 'raise') raiseCount++;
+          if (act === 'fold') foldCount++;
+        });
+
+        if (raiseCount === POSITIONS.length || foldCount === POSITIONS.length) {
+          cat3.push(combo);
+          return;
+        }
+
+        const currentAct = getHandActionType(pos, handStr);
+        const prevAct = getHandActionType(prevPos, handStr);
+        const nextAct = getHandActionType(nextPos, handStr);
+
+        const isMixed = currentAct === 'mixed';
+        const isBoundaryRaise = (currentAct === 'raise' && (pos === 'UTG' ? true : prevAct !== 'raise'));
+        const isBoundaryFold = (currentAct === 'fold' && (pos === 'SB' ? true : nextAct !== 'fold'));
+
+        if (isMixed || isBoundaryRaise || isBoundaryFold) {
+          cat1.push(combo);
+        } else {
+          cat2.push(combo);
+        }
+      });
+
+      return { cat1, cat2, cat3 };
+    }
+
+    function sampleNextCombo(pos, combos, mistakeQueue, mistakeFocusMode, recentHistory = [], masteredHands = []) {
+      const posMistakes = mistakeQueue.filter((m) => m.position === pos);
+      const allMistakes = mistakeQueue;
+
+      const masteredSet = masteredHands instanceof Set ? masteredHands : new Set(masteredHands || []);
+      const lastHandStr = recentHistory.length > 0 ? recentHistory[0] : null;
+
+      if (mistakeFocusMode && allMistakes.length > 0) {
+        const pool = posMistakes.length > 0 ? posMistakes : allMistakes;
+        let filteredPool = pool;
+        if (pool.length > 1 && lastHandStr) {
+          filteredPool = pool.filter((item) => (item.handStr || item.combo?.handStr) !== lastHandStr);
+          if (filteredPool.length === 0) filteredPool = pool;
+        }
+        const picked = filteredPool[Math.floor(Math.random() * filteredPool.length)];
+        return {
+          combo: picked.combo,
+          isFromQueue: true,
+          activePosition: picked.position,
+          queueItem: picked
+        };
+      }
+
+      if (posMistakes.length > 0 && Math.random() < 0.35) {
+        let filteredPosMistakes = posMistakes;
+        if (posMistakes.length > 1 && lastHandStr) {
+          filteredPosMistakes = posMistakes.filter((item) => (item.handStr || item.combo?.handStr) !== lastHandStr);
+          if (filteredPosMistakes.length === 0) filteredPosMistakes = posMistakes;
+        }
+        const picked = filteredPosMistakes[Math.floor(Math.random() * filteredPosMistakes.length)];
+        return {
+          combo: picked.combo,
+          isFromQueue: true,
+          activePosition: pos,
+          queueItem: picked
+        };
+      }
+
+      const { cat1, cat2, cat3 } = classifyCombosForPosition(pos, combos);
+
+      const rand = Math.random();
+      let targetPool = cat1;
+      if (rand < 0.55) {
+        targetPool = cat1.length > 0 ? cat1 : (cat2.length > 0 ? cat2 : cat3);
+      } else if (rand < 0.85) {
+        targetPool = cat2.length > 0 ? cat2 : (cat1.length > 0 ? cat1 : cat3);
+      } else {
+        targetPool = cat3.length > 0 ? cat3 : (cat1.length > 0 ? cat1 : cat2);
+      }
+
+      const mistakeHandMap = new Map();
+      posMistakes.forEach(item => mistakeHandMap.set(item.handStr || item.combo?.handStr, item));
+
+      let totalWeight = 0;
+      const weights = targetPool.map((c) => {
+        let w = 1.0;
+        const handStr = c.handStr;
+
+        if (mistakeHandMap.has(handStr)) {
+          w *= 4.0;
+        }
+
+        const posKey = `${pos}:${handStr}`;
+        if (masteredSet.has(posKey) || masteredSet.has(handStr)) {
+          w *= 0.25;
+        }
+
+        const recentIndex = recentHistory.indexOf(handStr);
+        if (recentIndex === 0) {
+          w *= 0.001;
+        } else if (recentIndex >= 1 && recentIndex <= 3) {
+          w *= 0.05;
+        } else if (recentIndex >= 4 && recentIndex <= 10) {
+          w *= 0.25;
+        }
+
+        totalWeight += w;
+        return w;
+      });
+
+      let selectedCombo = null;
+      let randomWeight = Math.random() * totalWeight;
+
+      for (let i = 0; i < targetPool.length; i++) {
+        randomWeight -= weights[i];
+        if (randomWeight <= 0) {
+          selectedCombo = targetPool[i];
+          break;
+        }
+      }
+
+      if (!selectedCombo) {
+        selectedCombo = targetPool[targetPool.length - 1] || combos[0];
+      }
+
+      if (selectedCombo.handStr === lastHandStr && targetPool.length > 1) {
+        const alt = targetPool.find((c) => c.handStr !== lastHandStr);
+        if (alt) selectedCombo = alt;
+      }
+
+      const matchedQueueItem = mistakeHandMap.get(selectedCombo.handStr);
+
+      return {
+        combo: selectedCombo,
+        isFromQueue: !!matchedQueueItem,
+        activePosition: pos,
+        queueItem: matchedQueueItem || null
+      };
+    }
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [currentPosition, setCurrentPosition] = useState('UTG');
+      const [currentCombo, setCurrentCombo] = useState(null);
+      const [userAction, setUserAction] = useState(null);
+      const [isAnswered, setIsAnswered] = useState(false);
+      const [currentDecision, setCurrentDecision] = useState(null);
+
+      const [stats, setStats] = useState(() => {
+        const saved = localStorage.getItem('rfi_stats_v2');
+        return saved ? JSON.parse(saved) : {
+          accuracy: 100,
+          totalHands: 0,
+          correctHands: 0,
+          evLoss: 0,
+          bestStreak: 0,
+          currentStreak: 0
+        };
+      });
+
+      const [mistakeQueue, setMistakeQueue] = useState(() => {
+        const saved = localStorage.getItem('rfi_mistake_queue_v2');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [masteredHands, setMasteredHands] = useState(() => {
+        const saved = localStorage.getItem('rfi_mastered_hands_v2');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      useEffect(() => {
+        localStorage.setItem('rfi_mastered_hands_v2', JSON.stringify(masteredHands));
+      }, [masteredHands]);
+
+      const [mistakeFocusMode, setMistakeFocusMode] = useState(false);
+      const [recentHistory, setRecentHistory] = useState([]);
+      const [isFromQueue, setIsFromQueue] = useState(false);
+      const [currentQueueItem, setCurrentQueueItem] = useState(null);
+      const [isRangeDropdownOpen, setIsRangeDropdownOpen] = useState(false);
+      const [queryPosition, setQueryPosition] = useState('UTG');
+      const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+
+      const dropdownRef = useRef(null);
+      const feedbackRef = useRef(null);
+
+      useEffect(() => {
+        localStorage.setItem('rfi_stats_v2', JSON.stringify(stats));
+      }, [stats]);
+
+      useEffect(() => {
+        localStorage.setItem('rfi_mistake_queue_v2', JSON.stringify(mistakeQueue));
+      }, [mistakeQueue]);
+
+      useEffect(() => {
+        setQueryPosition(currentPosition);
+      }, [currentPosition]);
+
+      // Close dropdown on outside click
+      useEffect(() => {
+        const handleClickOutside = (event) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+            setIsRangeDropdownOpen(false);
+          }
+        };
+        if (isRangeDropdownOpen) {
+          document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, [isRangeDropdownOpen]);
+
+      // Deal Next Hand
+      const dealNextHand = (pos = currentPosition) => {
+        setUserAction(null);
+        setIsAnswered(false);
+        setCurrentDecision(null);
+
+        const sampled = sampleNextCombo(pos, ALL_1326_COMBOS, mistakeQueue, mistakeFocusMode, recentHistory, masteredHands);
+        if (sampled.activePosition !== pos) {
+          setCurrentPosition(sampled.activePosition);
+        }
+        setCurrentCombo(sampled.combo);
+        setIsFromQueue(sampled.isFromQueue);
+        setCurrentQueueItem(sampled.queueItem);
+        setRecentHistory((prev) => [sampled.combo.handStr, ...prev.slice(0, 19)]);
+      };
+
+      useEffect(() => {
+        dealNextHand(currentPosition);
+      }, []);
+
+      const handleSelectPosition = (newPos) => {
+        setCurrentPosition(newPos);
+        dealNextHand(newPos);
+      };
+
+      const handleUserAction = (action) => {
+        if (isAnswered || !currentCombo) return;
+
+        setUserAction(action);
+        setIsAnswered(true);
+
+        const decision = evaluateDecision(currentPosition, currentCombo.handStr, action);
+        setCurrentDecision(decision);
+
+        // Update Stats
+        setStats((prev) => {
+          const newTotal = prev.totalHands + 1;
+          const newCorrect = prev.correctHands + (decision.isCorrect ? 1 : 0);
+          const newEvLoss = prev.evLoss + Math.abs(decision.evPenalty);
+          const newStreak = decision.isCorrect ? prev.currentStreak + 1 : 0;
+          const newBest = Math.max(prev.bestStreak, newStreak);
+
+          return {
+            accuracy: Math.round((newCorrect / newTotal) * 100),
+            totalHands: newTotal,
+            correctHands: newCorrect,
+            evLoss: newEvLoss,
+            bestStreak: newBest,
+            currentStreak: newStreak
+          };
+        });
+
+        // Update Mistake Queue & Mastery
+        const handKey = `${currentPosition}:${currentCombo.handStr}`;
+        const existingQueueItem = mistakeQueue.find(
+          (m) => m.position === currentPosition && (m.handStr || m.combo?.handStr) === currentCombo.handStr
+        );
+
+        if (decision.isCorrect) {
+          if (existingQueueItem) {
+            const updatedStreak = existingQueueItem.streak + 1;
+            if (updatedStreak >= 3) {
+              setMistakeQueue((prev) => prev.filter((m) => m.id !== existingQueueItem.id));
+              setMasteredHands((prev) => Array.from(new Set([...prev, handKey])));
+            } else {
+              setMistakeQueue((prev) =>
+                prev.map((m) => (m.id === existingQueueItem.id ? { ...m, streak: updatedStreak } : m))
+              );
+            }
+          } else {
+            setMasteredHands((prev) => Array.from(new Set([...prev, handKey])));
+          }
+        } else {
+          setMasteredHands((prev) => prev.filter((k) => k !== handKey));
+          if (existingQueueItem) {
+            setMistakeQueue((prev) =>
+              prev.map((m) => (m.id === existingQueueItem.id ? { ...m, streak: 0 } : m))
+            );
+          } else {
+            setMistakeQueue((prev) => [
+              ...prev,
+              {
+                id: `${currentPosition}_${currentCombo.handStr}_${Date.now()}`,
+                position: currentPosition,
+                handStr: currentCombo.handStr,
+                combo: currentCombo,
+                streak: 0,
+                timestamp: Date.now()
+              }
+            ]);
+          }
+        }
+
+        // Auto scroll to feedback panel
+        setTimeout(() => {
+          if (feedbackRef.current) {
+            feedbackRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }, 50);
+      };
+
+      // Hotkey listeners
+      useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+          if (e.key === 'f' || e.key === 'F' || e.key === 'ArrowLeft') {
+            handleUserAction('fold');
+          } else if (e.key === 'r' || e.key === 'R' || e.key === 'ArrowRight') {
+            handleUserAction('raise');
+          } else if (e.key === ' ' || e.key === 'Enter') {
+            if (isAnswered) {
+              dealNextHand();
+            }
+          }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, [isAnswered, currentPosition, currentCombo]);
+
+      const [useFourColorDeck, setUseFourColorDeck] = useState(false);
+
+      const getSuitColorClass = (suit) => {
+        if (useFourColorDeck) {
+          switch (suit) {
+            case 's': return 'text-slate-900';
+            case 'h': return 'text-red-600';
+            case 'd': return 'text-blue-600';
+            case 'c': return 'text-emerald-600';
+            default: return 'text-slate-900';
+          }
+        } else {
+          switch (suit) {
+            case 's': return 'text-slate-950'; // 黑桃：黑色
+            case 'h': return 'text-red-600';   // 红桃：红色
+            case 'd': return 'text-red-600';   // 方片/方块：红色
+            case 'c': return 'text-slate-950'; // 草花/梅花：黑色
+            default: return 'text-slate-950';
+          }
+        }
+      };
+
+      // Range Matrix calculation for dropdown
+      const posData = RFI_STRATEGY[queryPosition];
+      let totalRaiseCombos = 0;
+      posData.raise.forEach((h) => {
+        totalRaiseCombos += h.length === 2 ? 6 : h.endsWith('s') ? 4 : 12;
+      });
+      let totalMixedCombos = 0;
+      Object.keys(posData.mixed).forEach((h) => {
+        totalMixedCombos += (h.length === 2 ? 6 : h.endsWith('s') ? 4 : 12) * 0.5;
+      });
+      const frequencyPercent = (((totalRaiseCombos + totalMixedCombos) / 1326) * 100).toFixed(1);
+
+      return (
+        <div className="min-h-screen flex flex-col bg-[#0B132B] text-slate-100">
+          {/* HEADER */}
+          <header className="bg-[#1E293B] border-b border-slate-700/80 px-4 py-3 sticky top-0 z-40 shadow-lg">
+            <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                </div>
+                <div>
+                  <h1 className="text-base sm:text-lg font-black tracking-wide text-white flex items-center gap-2">
+                    GTO RFI TRAINER <span className="text-xs font-mono text-emerald-400 font-normal border border-emerald-500/30 px-1.5 py-0.5 rounded bg-emerald-500/10">v2.1.0</span>
+                  </h1>
+                  <p className="text-[11px] text-slate-400 hidden sm:block">6-Max 翻前首开加注 (100bb) 极速闪卡训练器</p>
+                </div>
+              </div>
+
+              {/* Stats Summary */}
+              <div className="flex items-center gap-4 text-xs font-mono bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-400">ACCURACY 准确率</span>
+                  <span className={`font-bold ${stats.accuracy >= 90 ? 'text-emerald-400' : 'text-amber-400'}`}>{stats.accuracy.toFixed(1)}%</span>
+                </div>
+                <div className="h-6 w-px bg-slate-800" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-400">EV LOSS 累计亏损</span>
+                  <span className="font-bold text-rose-400">-{stats.evLoss} mBB</span>
+                </div>
+                <div className="h-6 w-px bg-slate-800" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-400">HANDS 手数</span>
+                  <span className="font-bold text-blue-400">{stats.totalHands}</span>
+                </div>
+              </div>
+
+              {/* Action Tools */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setUseFourColorDeck((prev) => !prev)}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  title="切换扑克颜色: 传统双色(♠黑♥红♦红♣黑) / 四色牌(♠黑♥红♦蓝♣绿)"
+                >
+                  <span>{useFourColorDeck ? '🎨 四色牌' : '♠♥♦♣ 传统双色'}</span>
+                </button>
+
+                <button
+                  onClick={() => setIsQueueModalOpen(true)}
+                  className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                  <span>错题库 ({mistakeQueue.length})</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (window.confirm('重置所有计分、掌握度与错题数据？')) {
+                      setStats({ accuracy: 100, totalHands: 0, correctHands: 0, evLoss: 0, bestStreak: 0, currentStreak: 0 });
+                      setMistakeQueue([]);
+                      setMasteredHands([]);
+                      try {
+                        localStorage.removeItem('rfi_mastered_hands_v2');
+                      } catch (e) {}
+                    }
+                  }}
+                  className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 transition-all cursor-pointer"
+                  title="重置统计数据"
+                >
+                  重置
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* MAIN CONTAINER */}
+          <main className="w-full max-w-6xl mx-auto flex-1 p-3 sm:p-5 pb-16 flex flex-col gap-4">
+            {/* SUB-BAR: Position selector & Range Matrix Dropdown */}
+            <div className="w-full flex flex-wrap items-center justify-between gap-3 bg-[#1E293B] p-3 rounded-2xl border border-slate-700/80 shadow-xl">
+              {/* Position Tabs */}
+              <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                {POSITIONS.map((pos) => {
+                  const isActive = currentPosition === pos;
+                  return (
+                    <button
+                      key={pos}
+                      onClick={() => handleSelectPosition(pos)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{pos}</span>
+                      <span className="text-[10px] opacity-75 font-mono">
+                        {pos === 'UTG' ? '16.8%' : pos === 'MP' ? '20.1%' : pos === 'CO' ? '27.2%' : pos === 'BTN' ? '43.8%' : '48.5%'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Side: Range Dropdown & Mode Switch */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs font-mono relative" ref={dropdownRef}>
+                {/* Range Matrix Dropdown Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsRangeDropdownOpen((prev) => !prev)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                    isRangeDropdownOpen
+                      ? 'bg-blue-600 text-white border-blue-400 ring-2 ring-blue-500/30'
+                      : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700/80 hover:border-blue-500/50'
+                  }`}
+                >
+                  <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                  <span>查询 GTO 矩阵</span>
+                  <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 font-mono text-[10px] rounded border border-blue-500/30">
+                    {queryPosition} ({frequencyPercent}%)
+                  </span>
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+
+                {/* Range Matrix Dropdown Popover */}
+                {isRangeDropdownOpen && (
+                  <div className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-16 sm:top-11 w-auto sm:w-[520px] max-h-[85vh] overflow-y-auto bg-[#1E293B] border border-slate-700 rounded-2xl shadow-2xl p-3 sm:p-4 z-50 text-slate-100 animate-fadeIn">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">GTO 翻前范围 13x13 矩阵</span>
+                        <span className="text-xs text-blue-400 font-mono">[{queryPosition}]</span>
+                      </div>
+                      <button onClick={() => setIsRangeDropdownOpen(false)} className="text-slate-400 hover:text-white p-1">✕</button>
+                    </div>
+
+                    {/* Matrix Position Tabs inside Dropdown */}
+                    <div className="my-2.5 flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                      {POSITIONS.map((pos) => (
+                        <button
+                          key={pos}
+                          onClick={() => setQueryPosition(pos)}
+                          className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all ${
+                            queryPosition === pos ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {pos}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex items-center justify-between gap-2 mb-2 text-[10px] bg-slate-900/50 p-2 rounded-lg border border-slate-800">
+                      <span className="text-slate-300 font-mono">RFI 频率: <strong className="text-emerald-400">{frequencyPercent}%</strong></span>
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Raise</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-500" /> Mixed</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-800 border border-slate-700" /> Fold</span>
+                      </div>
+                    </div>
+
+                    {/* 13x13 Grid with Inline CSS Grid Columns */}
+                    <div
+                      className="w-full aspect-square max-w-md mx-auto p-1 bg-slate-950 rounded-xl border border-slate-800"
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(13, minmax(0, 1fr))',
+                        gap: '2px'
+                      }}
+                    >
+                      {RANKS.map((r1, i) =>
+                        RANKS.map((r2, j) => {
+                          let handStr = i === j ? `${r1}${r2}` : i < j ? `${r1}${r2}s` : `${r2}${r1}o`;
+                          const isRaise = posData.raise.includes(handStr);
+                          const isMixed = posData.mixed[handStr] !== undefined;
+                          const isCurrentHand = queryPosition === currentPosition && currentCombo?.handStr === handStr;
+
+                          return (
+                            <div
+                              key={handStr}
+                              title={`${handStr} (${isRaise ? '100% Raise' : isMixed ? '50/50 Mixed' : '100% Fold'})`}
+                              className={`aspect-square flex items-center justify-center text-[7px] sm:text-[9px] font-mono font-bold rounded select-none leading-none ${
+                                isRaise
+                                  ? 'bg-emerald-600 text-white'
+                                  : isMixed
+                                  ? 'bg-gradient-to-br from-emerald-600 to-amber-500 text-white'
+                                  : 'bg-slate-900 text-slate-500 border border-slate-800/80'
+                              } ${isCurrentHand ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-950 scale-110 z-10 font-black shadow-lg' : ''}`}
+                            >
+                              {handStr}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mode toggle */}
+                <button
+                  onClick={() => setMistakeFocusMode((prev) => !prev)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-xs font-bold cursor-pointer shadow-sm ${
+                    mistakeFocusMode
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20 animate-pulse'
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-amber-500/50 hover:text-amber-400'
+                  }`}
+                >
+                  <span>{mistakeFocusMode ? '🔥 错题特训 (100% 专注)' : '⚡ 标准抽查 (30% 错题)'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Mastery Progress Indicators (专项训练掌握度 & 全部训练掌握度) */}
+            {(() => {
+              const mistakeKeySet = new Set(
+                mistakeQueue.map((item) => `${item.position}:${item.combo ? item.combo.handStr : item.handStr}`)
+              );
+
+              let posMasteredCount = 0;
+              masteredHands.forEach((key) => {
+                if (key.startsWith(`${currentPosition}:`) && !mistakeKeySet.has(key)) {
+                  posMasteredCount++;
+                }
+              });
+              posMasteredCount = Math.min(169, posMasteredCount);
+              const posPercent = ((posMasteredCount / 169) * 100).toFixed(1);
+
+              let totalMasteredCount = 0;
+              masteredHands.forEach((key) => {
+                if (!mistakeKeySet.has(key)) {
+                  totalMasteredCount++;
+                }
+              });
+              totalMasteredCount = Math.min(845, totalMasteredCount);
+              const totalPercent = ((totalMasteredCount / 845) * 100).toFixed(1);
+
+              return (
+                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* 专项训练掌握度 */}
+                  <div className="bg-[#1E293B]/90 border border-slate-700/80 rounded-2xl p-3 sm:p-3.5 shadow-xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
+                        <span className="font-bold text-slate-200">专项训练掌握度</span>
+                        <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono font-bold text-[11px]">
+                          {currentPosition} 专项
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="text-slate-400 text-[11px]">{posMasteredCount} / 169 牌型</span>
+                        <span className="text-sm font-bold text-blue-400">{posPercent}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2.5 bg-slate-900/90 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-blue-500 via-indigo-400 to-emerald-400 transition-all duration-500 ease-out shadow-sm"
+                        style={{ width: `${Math.min(100, Math.max(0, Number(posPercent)))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 全部训练掌握度 */}
+                  <div className="bg-[#1E293B]/90 border border-slate-700/80 rounded-2xl p-3 sm:p-3.5 shadow-xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="font-bold text-slate-200">全部训练掌握度</span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-bold text-[11px]">
+                          全 5 位置
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="text-slate-400 text-[11px]">{totalMasteredCount} / 845 牌型</span>
+                        <span className="text-sm font-bold text-emerald-400">{totalPercent}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2.5 bg-slate-900/90 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 transition-all duration-500 ease-out shadow-sm"
+                        style={{ width: `${Math.min(100, Math.max(0, Number(totalPercent)))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* POKER TABLE WORKSPACE */}
+            <div className="w-full flex flex-col items-center gap-4 flex-1">
+              {/* Table Container */}
+              <div className="w-full max-w-4xl sm:max-w-5xl relative bg-[#0B6637] border-[8px] sm:border-[12px] border-[#8B5E34] rounded-[90px] sm:rounded-[140px] p-4 sm:p-8 shadow-[inset_0_0_60px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center min-h-[260px] sm:min-h-[330px] my-1 sm:my-2">
+                {/* Inner Gold Stitched Ring line */}
+                <div className="absolute inset-3 sm:inset-4 border-2 border-amber-500/30 rounded-[85px] sm:rounded-[120px] pointer-events-none" />
+
+                {/* 6 Players seats around table */}
+                <div className="absolute top-2 sm:top-3 left-10 sm:left-16 flex flex-col items-center">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border transition-all ${
+                    currentPosition === 'UTG' ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg scale-110' : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}>UTG (100 BB)</span>
+                </div>
+
+                <div className="absolute top-2 sm:top-3 right-10 sm:right-16 flex flex-col items-center">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border transition-all ${
+                    currentPosition === 'MP' ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg scale-110' : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}>MP (100 BB)</span>
+                </div>
+
+                <div className="absolute top-1/2 -translate-y-1/2 right-2 sm:right-4 flex flex-col items-center">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border transition-all ${
+                    currentPosition === 'CO' ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg scale-110' : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}>CO (100 BB)</span>
+                </div>
+
+                <div className="absolute bottom-2 sm:bottom-3 right-10 sm:right-16 flex flex-col items-center">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border transition-all ${
+                    currentPosition === 'BTN' ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg scale-110' : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}>BTN (100 BB)</span>
+                </div>
+
+                <div className="absolute bottom-2 sm:bottom-3 left-10 sm:left-16 flex flex-col items-center">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border transition-all ${
+                    currentPosition === 'SB' ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg scale-110' : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}>SB (100 BB)</span>
+                </div>
+
+                <div className="absolute top-1/2 -translate-y-1/2 left-2 sm:left-4 flex flex-col items-center">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono border bg-slate-900/90 text-slate-400 border-slate-700">BB (100 BB)</span>
+                </div>
+
+                {/* Pot Badge */}
+                <div className="absolute top-8 sm:top-10 bg-slate-950/80 px-3 py-1 rounded-full border border-amber-500/40 text-amber-300 text-xs font-mono font-bold shadow-lg">
+                  底池 (POT): 1.5 BB
+                </div>
+
+                {/* Hand Cards Rendering */}
+                {currentCombo && (
+                  <div className="flex items-center gap-3 sm:gap-4 my-auto pt-6">
+                    {/* Card 1 */}
+                    <div className="w-20 sm:w-28 h-28 sm:h-40 bg-white rounded-xl shadow-2xl p-2 flex flex-col justify-between border-2 border-slate-200 transform hover:-translate-y-1 transition-all">
+                      <div className={`text-xl sm:text-3xl font-black font-mono leading-none ${getSuitColorClass(currentCombo.card1.suit)}`}>
+                        {currentCombo.card1.rank}
+                        <div className="text-lg sm:text-2xl">{SUIT_SYMBOLS[currentCombo.card1.suit]}</div>
+                      </div>
+                      <div className={`text-3xl sm:text-5xl text-center font-bold ${getSuitColorClass(currentCombo.card1.suit)}`}>
+                        {SUIT_SYMBOLS[currentCombo.card1.suit]}
+                      </div>
+                      <div className={`text-xl sm:text-3xl font-black font-mono leading-none rotate-180 text-right ${getSuitColorClass(currentCombo.card1.suit)}`}>
+                        {currentCombo.card1.rank}
+                        <div className="text-lg sm:text-2xl">{SUIT_SYMBOLS[currentCombo.card1.suit]}</div>
+                      </div>
+                    </div>
+
+                    {/* Card 2 */}
+                    <div className="w-20 sm:w-28 h-28 sm:h-40 bg-white rounded-xl shadow-2xl p-2 flex flex-col justify-between border-2 border-slate-200 transform hover:-translate-y-1 transition-all">
+                      <div className={`text-xl sm:text-3xl font-black font-mono leading-none ${getSuitColorClass(currentCombo.card2.suit)}`}>
+                        {currentCombo.card2.rank}
+                        <div className="text-lg sm:text-2xl">{SUIT_SYMBOLS[currentCombo.card2.suit]}</div>
+                      </div>
+                      <div className={`text-3xl sm:text-5xl text-center font-bold ${getSuitColorClass(currentCombo.card2.suit)}`}>
+                        {SUIT_SYMBOLS[currentCombo.card2.suit]}
+                      </div>
+                      <div className={`text-xl sm:text-3xl font-black font-mono leading-none rotate-180 text-right ${getSuitColorClass(currentCombo.card2.suit)}`}>
+                        {currentCombo.card2.rank}
+                        <div className="text-lg sm:text-2xl">{SUIT_SYMBOLS[currentCombo.card2.suit]}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hand Text Label */}
+                <div className="absolute bottom-6 bg-slate-950/90 px-3 py-1 rounded-lg border border-slate-800 text-xs font-mono text-slate-300">
+                  当前手牌: <strong className="text-amber-400 font-bold">{currentCombo?.handStr}</strong> {isFromQueue && <span className="text-amber-400 text-[10px] ml-1">(错题重练)</span>}
+                </div>
+              </div>
+
+              {/* ACTION CONTROLS */}
+              <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center gap-3">
+                {!isAnswered ? (
+                  <>
+                    <button
+                      onClick={() => handleUserAction('fold')}
+                      className="flex-1 w-full py-3.5 px-4 bg-slate-800 hover:bg-slate-700 text-rose-300 border border-slate-700 hover:border-rose-500/50 rounded-2xl text-base font-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>🚫 Fold 弃牌</span>
+                      <span className="text-xs font-mono px-2 py-0.5 bg-slate-900 text-slate-400 rounded border border-slate-700">F 或 ←</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleUserAction('raise')}
+                      className="flex-1 w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 rounded-2xl text-base font-black transition-all shadow-lg shadow-emerald-600/30 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>↗️ Raise 2.5bb</span>
+                      <span className="text-xs font-mono px-2 py-0.5 bg-emerald-800/80 text-emerald-100 rounded border border-emerald-400/50">R 或 →</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => dealNextHand()}
+                    className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-lg font-black transition-all shadow-xl shadow-blue-600/30 active:scale-98 flex items-center justify-center gap-3 cursor-pointer"
+                  >
+                    <span>下一手牌 →</span>
+                    <span className="text-xs font-mono px-2.5 py-1 bg-blue-800 text-blue-100 rounded-lg border border-blue-400">空格键 Space</span>
+                  </button>
+                )}
+              </div>
+
+              {/* FEEDBACK PANEL */}
+              {currentDecision && userAction && (
+                <div
+                  ref={feedbackRef}
+                  className={`w-full max-w-3xl border rounded-2xl p-4 shadow-2xl text-xs scroll-mb-12 ${
+                    currentDecision.isCorrect
+                      ? 'bg-[#132822]/95 border-emerald-500/50 text-emerald-100'
+                      : currentDecision.penaltyLevel === 'blunder'
+                      ? 'bg-[#2D151A]/95 border-rose-500/80 text-rose-100'
+                      : 'bg-[#2A1E14]/95 border-amber-500/60 text-amber-100'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2 font-bold text-sm">
+                      {currentDecision.isCorrect ? (
+                        <span className="text-emerald-400 text-base">✓ 当场判定：决策正确</span>
+                      ) : (
+                        <span className="text-rose-400 text-base">✕ 当场判定：决策错误</span>
+                      )}
+                      <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/30 border border-white/10">
+                        EV {currentDecision.evPenalty} mBB
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] font-mono opacity-80">
+                      GTO 推荐：<strong className="text-amber-300 uppercase">{currentDecision.recommendedAction}</strong>
+                    </div>
+                  </div>
+
+                  <p className="mt-2 text-sm font-medium leading-relaxed">{currentDecision.message}</p>
+                </div>
+              )}
+            </div>
+          </main>
+
+          {/* MISTAKE QUEUE MODAL */}
+          {isQueueModalOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-[#1E293B] border border-slate-700 rounded-2xl max-w-lg w-full p-5 shadow-2xl text-slate-100">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-700">
+                  <h3 className="text-base font-bold flex items-center gap-2 text-amber-400">
+                    漏水错题库管理 ({mistakeQueue.length})
+                  </h3>
+                  <button onClick={() => setIsQueueModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <div className="my-4 max-h-80 overflow-y-auto space-y-2 pr-1">
+                  {mistakeQueue.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-xs">错题库为空！保持完美操作。</div>
+                  ) : (
+                    mistakeQueue.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 font-mono text-xs rounded font-bold">{item.position}</span>
+                          <span className="font-mono font-bold text-slate-200">{item.combo.handStr}</span>
+                        </div>
+                        <span className="text-amber-400 font-mono">消除连对: {item.streak}/3</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-slate-700">
+                  <button
+                    onClick={() => {
+                      if (window.confirm('清空所有错题？')) setMistakeQueue([]);
+                    }}
+                    className="text-xs text-rose-400 hover:text-rose-300"
+                  >
+                    清空错题库
+                  </button>
+                  <button
+                    onClick={() => setIsQueueModalOpen(false)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold"
+                  >
+                    完成
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
